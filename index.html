@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WNI Simulator — Game Papan Simulasi Ekonomi Indonesia</title>
+    <meta
+      name="description"
+      content="WNI Simulator adalah permainan papan simulasi kehidupan ekonomi Indonesia. Bangun aset kos, pasar rakyat, sentra UMKM, dan kelola arus kas keuangan."
+    />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem('wni_theme');
+          if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body
+    class="min-h-screen bg-[#f6f5f0] text-black font-sans antialiased dark:bg-[#1e2129] dark:text-white"
+  >
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
