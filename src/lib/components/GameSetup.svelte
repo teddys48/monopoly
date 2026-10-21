@@ -118,8 +118,18 @@
             <Bot size={20} class="stroke-[2.5]" />
           </div>
           <div>
-            <div class="text-sm font-black text-black dark:text-white">Lawan Bot AI</div>
-            <div class="text-[11px] font-bold text-neutral-700 dark:text-neutral-300">
+            <div
+              class="text-sm font-black {mode === 'BOT'
+                ? 'text-black'
+                : 'text-black dark:text-white'}"
+            >
+              Lawan Bot AI
+            </div>
+            <div
+              class="text-[11px] font-bold {mode === 'BOT'
+                ? 'text-neutral-700'
+                : 'text-neutral-700 dark:text-neutral-300'}"
+            >
               1 Pemain Manusia vs Lawan Bot Komputer
             </div>
           </div>
@@ -139,8 +149,18 @@
             <Users size={20} class="stroke-[2.5]" />
           </div>
           <div>
-            <div class="text-sm font-black text-black dark:text-white">Multiplayer Lokal</div>
-            <div class="text-[11px] font-bold text-neutral-700 dark:text-neutral-300">
+            <div
+              class="text-sm font-black {mode === 'LOCAL_MULTIPLAYER'
+                ? 'text-black'
+                : 'text-black dark:text-white'}"
+            >
+              Multiplayer Lokal
+            </div>
+            <div
+              class="text-[11px] font-bold {mode === 'LOCAL_MULTIPLAYER'
+                ? 'text-neutral-700'
+                : 'text-neutral-700 dark:text-neutral-300'}"
+            >
               Main bergantian bersama teman di satu perangkat
             </div>
           </div>
@@ -194,7 +214,9 @@
       </h3>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {#each activePlayers as player, idx (player.color)}
+        {#each activePlayers as player, idx (idx)}
+          {@const isColorDuplicated =
+            activePlayers.filter((p) => p.color === player.color).length > 1}
           <div
             class="rounded-lg border-2 border-black bg-[#f6f5f0] p-4 dark:bg-[#20242e] shadow-[3px_3px_0px_0px_#000]"
           >
@@ -261,6 +283,11 @@
                   ></button>
                 {/each}
               </div>
+              {#if isColorDuplicated}
+                <p class="mt-2 text-[10px] font-black text-[#DC2626] dark:text-[#FCA5A5]">
+                  Warna ini juga dipakai pemain lain. Pilih warna berbeda agar sesi bisa dimulai.
+                </p>
+              {/if}
             </div>
           </div>
         {/each}

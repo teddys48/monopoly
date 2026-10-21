@@ -1,6 +1,6 @@
 import type { GameConfig, PlayerDraft } from '../domain/game-config';
 import type { BoardTile } from '../domain/board';
-import { GAME_CONSTANTS } from './constants';
+import { GAME_CONSTANTS, PLAYER_COLORS } from './constants';
 
 export interface ValidationSuccess<T> {
   isValid: true;
@@ -64,7 +64,7 @@ export function validateGameConfig(config: unknown): ValidationResult<GameConfig
     }
 
     const seenNames = new Set<string>();
-    const seenColors = new Set<string>();
+    const seenColors = new Map<string, string[]>();
 
     raw.players.forEach((p: PlayerDraft, idx: number) => {
       const playerNum = idx + 1;
@@ -90,10 +90,19 @@ export function validateGameConfig(config: unknown): ValidationResult<GameConfig
 
       if (!p.color) {
         errors.push(`Warna pion pemain #${playerNum} harus dipilih.`);
-      } else if (seenColors.has(p.color)) {
-        errors.push(`Warna pion "${p.color}" digunakan oleh lebih dari satu pemain.`);
       } else {
-        seenColors.add(p.color);
+        const owners = seenColors.get(p.color) ?? [];
+        owners.push(trimmedName || `Pemain #${playerNum}`);
+        seenColors.set(p.color, owners);
+      }
+    });
+
+    seenColors.forEach((owners, hex) => {
+      if (owners.length > 1) {
+        const colorName = PLAYER_COLORS.find((c) => c.hex === hex)?.name ?? hex;
+        errors.push(
+          `Warna pion "${colorName}" dipakai oleh lebih dari satu pemain (${owners.join(', ')}). Setiap pemain harus memakai warna berbeda.`
+        );
       }
     });
 
