@@ -1,6 +1,8 @@
 import type { BoardTile } from '../domain/board';
 import type { Player } from '../domain/player';
+import type { AssetOwnership } from '../domain/economy';
 import { formatRupiah } from '../../utils/currency';
+import { getAssetByTileId } from '../data/assets';
 
 export type TileResolutionCategory =
   | 'START'
@@ -30,17 +32,27 @@ export interface TileResolutionResult {
     awarded: boolean;
     amount: number;
   };
+  assetInfo?: {
+    assetId: string;
+    cost: number;
+    baseRent: number;
+    isOwned: boolean;
+    ownerPlayerId?: string;
+    ownerName?: string;
+  };
 }
 
 export interface TileResolutionContext {
   crossedStart?: boolean;
   salaryPerLap?: number;
+  ownerships?: AssetOwnership[];
+  players?: Player[];
 }
 
 /**
  * Resolves a board tile when a player lands on it.
- * Only applies financial impact if explicitly configured.
- * Does not execute Phase 3 asset purchases or complex economy cards.
+ * Integrates with asset ownership and economic impact when ownership context is provided.
+ * Preserves backward compatibility when ownership context is omitted.
  */
 export function resolveTile(
   tile: BoardTile | undefined | null,
@@ -95,13 +107,81 @@ export function resolveTile(
     case 'PROPERTY':
     case 'COMMERCIAL':
     case 'OFFICE':
-    case 'TRANSIT':
+    case 'TRANSIT': {
+      // If economic ownership context is NOT provided, maintain Phase 2 baseline
+      if (!context.ownerships) {
+        return {
+          ...baseResult,
+          headline: `Aset Usaha: ${tile.name}`,
+          description: `${tile.description} (Mekanisme pembelian aset akan diaktifkan pada Fase 3).`,
+          financialImpact: { amount: 0, reason: '' }
+        };
+      }
+
+      // Economic Phase 3 resolution
+      const asset = getAssetByTileId(tile.id);
+      const cost = asset?.cost ?? tile.baseCost ?? 0;
+      const baseRent = asset?.baseRent ?? tile.baseRent ?? 0;
+      const ownership = asset ? context.ownerships.find((o) => o.assetId === asset.id) : undefined;
+
+      if (!ownership) {
+        // Asset is available for purchase
+        return {
+          ...baseResult,
+          headline: `Peluang Akuisisi: ${tile.name}`,
+          description: `${tile.description} Aset ini belum dimiliki. Tersedia untuk dibeli seharga ${formatRupiah(cost)} dengan estimasi sewa ${formatRupiah(baseRent)}.`,
+          financialImpact: { amount: 0, reason: '' },
+          assetInfo: asset
+            ? {
+                assetId: asset.id,
+                cost,
+                baseRent,
+                isOwned: false
+              }
+            : undefined
+        };
+      }
+
+      // Asset is owned
+      const owner = context.players?.find((p) => p.id === ownership.ownerPlayerId);
+      const isOwner = ownership.ownerPlayerId === player.id;
+
+      if (isOwner) {
+        return {
+          ...baseResult,
+          headline: `Aset Milik Sendiri: ${tile.name}`,
+          description: `Anda singgah di tempat usaha milik sendiri. Tidak ada biaya sewa yang dibebankan.`,
+          financialImpact: { amount: 0, reason: '' },
+          assetInfo: {
+            assetId: asset?.id ?? tile.id,
+            cost,
+            baseRent,
+            isOwned: true,
+            ownerPlayerId: player.id,
+            ownerName: player.name
+          }
+        };
+      }
+
+      // Owned by an opponent: Rent obligation
       return {
         ...baseResult,
-        headline: `Aset Usaha: ${tile.name}`,
-        description: `${tile.description} (Mekanisme pembelian aset akan diaktifkan pada Fase 3).`,
-        financialImpact: { amount: 0, reason: '' }
+        headline: `Singgah di Properti ${owner?.name ?? 'Lawan'}: ${tile.name}`,
+        description: `Anda singgah di tempat usaha milik ${owner?.name ?? 'lawan'}. Dikenakan biaya sewa sebesar ${formatRupiah(baseRent)}.`,
+        financialImpact: {
+          amount: -baseRent,
+          reason: `Sewa ${tile.name} (${owner?.name ?? 'Pemilik'})`
+        },
+        assetInfo: {
+          assetId: asset?.id ?? tile.id,
+          cost,
+          baseRent,
+          isOwned: true,
+          ownerPlayerId: ownership.ownerPlayerId,
+          ownerName: owner?.name ?? 'Pemain Lain'
+        }
       };
+    }
 
     case 'REST':
       return {

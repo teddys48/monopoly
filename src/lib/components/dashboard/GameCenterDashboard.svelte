@@ -2,7 +2,11 @@
   import type { Player } from '../../game/domain/player';
   import type { BoardTile } from '../../game/domain/board';
   import { gameSession } from '../../stores/game.svelte';
-  import { formatRupiah } from '../../utils/currency';
+  import { formatRupiah, formatShortRupiah } from '../../utils/currency';
+  import {
+    calculatePlayerAssetValuation,
+    calculatePlayerNetWorth
+  } from '../../game/engine/economy';
   import DicePair from '../dice/DicePair.svelte';
   import Button from '../ui/Button.svelte';
   import Badge from '../ui/Badge.svelte';
@@ -16,7 +20,11 @@
     Sparkles,
     CheckCircle2,
     Info,
-    AlertTriangle
+    AlertTriangle,
+    Briefcase,
+    Receipt,
+    ShoppingBag,
+    Coins
   } from 'lucide-svelte';
 
   interface Props {
@@ -50,6 +58,20 @@
   );
   const statusLogs = $derived(gameSession.gameState?.statusLog.slice(0, 10) ?? []);
   const turnResolution = $derived(gameSession.gameState?.currentTurn?.resolution);
+  const pendingPurchase = $derived(gameSession.gameState?.currentTurn?.pendingPurchase ?? null);
+
+  const ownerships = $derived(gameSession.gameState?.ownerships ?? []);
+  const transactions = $derived(gameSession.gameState?.transactions ?? []);
+
+  const activePlayerOwnerships = $derived(
+    ownerships.filter((o) => o.ownerPlayerId === activePlayer?.id)
+  );
+  const activePlayerValuation = $derived(
+    calculatePlayerAssetValuation(activePlayer?.id ?? '', ownerships)
+  );
+  const activePlayerNetWorth = $derived(
+    activePlayer ? calculatePlayerNetWorth(activePlayer, ownerships) : 0
+  );
 
   const phaseBadgeInfo = $derived.by(() => {
     switch (currentPhase) {
@@ -94,11 +116,24 @@
       gameSession.dispatch({ type: 'END_TURN' });
     }
   }
+
+  function handleQuickBuy() {
+    if (pendingPurchase) {
+      gameSession.dispatch({
+        type: 'PURCHASE_ASSET',
+        payload: { assetId: pendingPurchase.id }
+      });
+    }
+  }
+
+  function handleQuickDecline() {
+    gameSession.dispatch({ type: 'DECLINE_PURCHASE' });
+  }
 </script>
 
-<div class="flex h-full min-h-0 flex-col justify-between gap-2 text-black dark:text-white">
-  <!-- Top Status Bar -->
-  <div class="flex items-center justify-between border-b-2 border-black pb-1.5 shrink-0">
+<div class="flex h-full min-h-0 flex-col justify-between gap-2 text-black dark:text-white select-none">
+  <!-- Top Status & Economic Bar -->
+  <div class="flex items-center justify-between border-b-2 border-black pb-1.5 shrink-0 gap-1 flex-wrap">
     <div class="flex items-center gap-1.5 flex-wrap">
       <Badge variant="success" class="text-xs uppercase font-black px-2 py-0.5">
         Putaran #{gameSession.gameState?.currentRound ?? 1}
@@ -109,25 +144,48 @@
       </Badge>
     </div>
 
-    <Button
-      variant="outline"
-      size="sm"
-      onclick={() => gameSession.dispatch({ type: 'RESET_GAME' })}
-      class="text-xs py-0.5 px-2 shrink-0"
-    >
-      <RotateCcw size={12} class="stroke-[2.5]" /> Menu
-    </Button>
+    <!-- Quick Navigation buttons -->
+    <div class="flex items-center gap-1">
+      <Button
+        variant="outline"
+        size="sm"
+        onclick={() => gameSession.openPortfolio(activePlayer.id)}
+        class="text-xs py-0.5 px-2 bg-white text-black dark:bg-[#20242e] dark:text-white shrink-0"
+        title="Lihat Portofolio Aset"
+      >
+        <Briefcase size={12} class="stroke-[2.5]" /> Portofolio ({activePlayerOwnerships.length})
+      </Button>
+
+      <Button
+        variant="outline"
+        size="sm"
+        onclick={() => gameSession.openTransactions()}
+        class="text-xs py-0.5 px-2 bg-white text-black dark:bg-[#20242e] dark:text-white shrink-0"
+        title="Lihat Riwayat Transaksi"
+      >
+        <Receipt size={12} class="stroke-[2.5]" /> Transaksi ({transactions.length})
+      </Button>
+
+      <Button
+        variant="outline"
+        size="sm"
+        onclick={() => gameSession.dispatch({ type: 'RESET_GAME' })}
+        class="text-xs py-0.5 px-2 shrink-0"
+      >
+        <RotateCcw size={12} class="stroke-[2.5]" /> Menu
+      </Button>
+    </div>
   </div>
 
-  <!-- Center Active Turn Hero Card (Compact Fixed Height) -->
+  <!-- Center Active Turn Hero Card with Full Economic Breakdown -->
   <div
-    class="rounded-xl border-2 border-black bg-white p-2 shadow-[2px_2px_0px_0px_#000] dark:bg-[#20242e] shrink-0"
+    class="rounded-xl border-2 border-black bg-white p-2.5 shadow-[2px_2px_0px_0px_#000] dark:bg-[#20242e] shrink-0"
   >
-    <div class="flex items-center justify-between mb-1">
+    <div class="flex items-center justify-between mb-1.5">
       <span
         class="text-[9px] font-black uppercase tracking-wider text-neutral-600 dark:text-neutral-400"
       >
-        Giliran Pemain Aktif
+        Pemain Aktif & Neraca Keuangan
       </span>
 
       <Badge variant={isBotTurn ? 'purple' : 'info'} class="text-[9px] px-1.5 py-0">
@@ -142,7 +200,7 @@
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-2 overflow-hidden">
         <div
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-black text-xs font-black text-white shadow-[1px_1px_0px_0px_#000]"
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 border-black text-xs font-black text-white shadow-[1px_1px_0px_0px_#000]"
           style="background-color: {activePlayer.color};"
         >
           {activePlayer.name.charAt(0).toUpperCase()}
@@ -153,12 +211,97 @@
             {activePlayer.name}
           </h3>
           <p class="text-[10px] font-bold text-neutral-600 dark:text-neutral-400 truncate">
-            Petak #{activePlayer.position} &bull; Saldo: {formatRupiah(activePlayer.balance)}
+            Posisi: Petak #{activePlayer.position}
           </p>
+        </div>
+      </div>
+
+      <!-- Economic Stats Pill Grid -->
+      <div class="flex items-center gap-2 text-right">
+        <div>
+          <span class="text-[8px] font-bold uppercase text-neutral-500 dark:text-neutral-400 block">
+            Kas Tunai
+          </span>
+          <span class="text-xs font-black text-black dark:text-white">
+            {formatShortRupiah(activePlayer.balance)}
+          </span>
+        </div>
+
+        <div class="border-l border-neutral-300 dark:border-neutral-700 pl-2">
+          <span class="text-[8px] font-bold uppercase text-neutral-500 dark:text-neutral-400 block">
+            Valuasi Aset
+          </span>
+          <span class="text-xs font-black text-black dark:text-white">
+            {formatShortRupiah(activePlayerValuation)}
+          </span>
+        </div>
+
+        <div class="border-l border-neutral-300 dark:border-neutral-700 pl-2">
+          <span class="text-[8px] font-bold uppercase text-neutral-500 dark:text-neutral-400 block">
+            Net Worth
+          </span>
+          <span class="text-xs font-black text-[#047857] dark:text-[#34d399]">
+            {formatShortRupiah(activePlayerNetWorth)}
+          </span>
         </div>
       </div>
     </div>
   </div>
+
+  <!-- Interactive Purchase Opportunity Banner (Appears when landing on available asset) -->
+  {#if pendingPurchase && isTurnComplete && !isBotTurn}
+    <div
+      class="rounded-xl border-2 border-black bg-[#fef08a] p-2 dark:bg-[#78350f]/60 shadow-[2px_2px_0px_0px_#000] flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0 animate-in fade-in slide-in-from-top-2"
+    >
+      <div class="flex items-center gap-2 overflow-hidden w-full sm:w-auto">
+        <div
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-black text-black font-black text-xs"
+          style="background-color: {pendingPurchase.colorBadge};"
+        >
+          <ShoppingBag size={14} class="stroke-[2.5]" />
+        </div>
+        <div class="overflow-hidden leading-tight">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs font-black text-black dark:text-white truncate">
+              {pendingPurchase.name}
+            </span>
+            <Badge variant="purple" class="text-[8px] px-1 py-0 font-black">
+              {pendingPurchase.category}
+            </Badge>
+          </div>
+          <span class="text-[10px] font-bold text-neutral-700 dark:text-neutral-300">
+            Harga: {formatRupiah(pendingPurchase.cost)} &bull; Sewa: +{formatRupiah(pendingPurchase.baseRent)}
+          </span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1.5 w-full sm:w-auto justify-end">
+        <Button
+          variant="outline"
+          size="sm"
+          onclick={handleQuickDecline}
+          class="text-xs py-1 px-2.5 font-bold"
+        >
+          Lewati
+        </Button>
+
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={activePlayer.balance < pendingPurchase.cost}
+          onclick={handleQuickBuy}
+          class="bg-[#86efac] text-black hover:bg-[#4ade80] text-xs py-1 px-3 font-black shadow-[2px_2px_0px_0px_#000]"
+        >
+          <Coins size={12} class="stroke-[2.5]" />
+          {#if activePlayer.balance >= pendingPurchase.cost}
+            Beli Aset
+          {:else}
+            Kas Kurang
+          {/if}
+        </Button>
+      </div>
+    </div>
+  {/if}
 
   <!-- Two-Dice & Roll Interaction Area -->
   <div
@@ -177,7 +320,7 @@
           size="md"
           onclick={handleEndTurn}
           disabled={isBotTurn}
-          class="w-full sm:w-auto bg-[#86efac] text-black hover:bg-[#4ade80] py-1.5"
+          class="w-full sm:w-auto bg-[#86efac] text-black hover:bg-[#4ade80] py-1.5 font-black"
         >
           <ArrowRight size={15} class="stroke-[3]" />
           {#if isBotTurn}
@@ -192,7 +335,7 @@
           size="md"
           onclick={handleRoll}
           disabled={!!disableRollReason}
-          class="w-full sm:w-auto py-1.5"
+          class="w-full sm:w-auto py-1.5 font-black"
         >
           <Dices size={15} class="stroke-[2.5]" />
           {#if isRolling}
@@ -217,7 +360,7 @@
     </div>
   </div>
 
-  <!-- Dedicated Slot for Resolution Card (Compact Height so outer layout is static) -->
+  <!-- Dedicated Slot for Resolution Card -->
   <div class="h-[64px] shrink-0 flex flex-col justify-center overflow-hidden">
     {#if turnResolution}
       <div
@@ -262,7 +405,7 @@
     {/if}
   </div>
 
-  <!-- Live Status & Ticker History (Full Natural Wrapping, Never Cut Off) -->
+  <!-- Live Status & Ticker History -->
   <div
     class="flex-1 min-h-[110px] rounded-lg border-2 border-black bg-[#f6f5f0] p-2.5 text-xs dark:bg-[#20242e] shadow-[2px_2px_0px_0px_#000] overflow-hidden flex flex-col"
   >
@@ -273,7 +416,7 @@
         <History size={12} class="stroke-[2.5]" /> Catatan Aksi:
       </span>
       <span class="text-[9px] font-normal text-neutral-500 dark:text-neutral-400">
-        Riwayat langkah
+        Riwayat langkah & ekonomi
       </span>
     </div>
 

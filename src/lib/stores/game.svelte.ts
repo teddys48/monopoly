@@ -5,6 +5,7 @@ import type { GameAction } from '../game/actions/actions';
 import { createGameState } from '../game/engine/state-factory';
 import { getInitialBoardTiles } from '../game/data/board';
 import { createDefaultRng, type Rng } from '../game/engine/rng';
+import { GAME_CONSTANTS } from '../game/rules/constants';
 import {
   canRollDice,
   rollDice,
@@ -13,6 +14,12 @@ import {
   resolveTurnTile,
   endTurn
 } from '../game/engine/game-engine';
+import {
+  purchaseAsset,
+  declinePurchase,
+  sellAsset,
+  canPurchaseAsset
+} from '../game/engine/economy';
 
 export type AppView = 'MENU' | 'SETUP' | 'BOARD';
 
@@ -40,6 +47,12 @@ class GameSessionStore {
   animatingPlayerId = $state<string | null>(null);
   isProcessingBot = $state<boolean>(false);
 
+  // Economic Dialog & Modal States
+  isPortfolioOpen = $state<boolean>(false);
+  portfolioPlayerId = $state<string | null>(null);
+  isTransactionsOpen = $state<boolean>(false);
+  isPurchasePromptOpen = $state<boolean>(false);
+
   private rng: Rng = createDefaultRng();
   private animationRunId = 0;
   private botTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -58,6 +71,10 @@ class GameSessionStore {
 
   get phase() {
     return this.gameState?.phase ?? 'READY';
+  }
+
+  get pendingPurchase() {
+    return this.gameState?.currentTurn?.pendingPurchase ?? null;
   }
 
   setRng(customRng: Rng): void {
@@ -83,6 +100,31 @@ class GameSessionStore {
     this.currentView = 'SETUP';
   }
 
+  openPortfolio(playerId?: string): void {
+    this.portfolioPlayerId = playerId ?? this.activePlayer?.id ?? null;
+    this.isPortfolioOpen = true;
+  }
+
+  closePortfolio(): void {
+    this.isPortfolioOpen = false;
+  }
+
+  openTransactions(): void {
+    this.isTransactionsOpen = true;
+  }
+
+  closeTransactions(): void {
+    this.isTransactionsOpen = false;
+  }
+
+  openPurchasePrompt(): void {
+    this.isPurchasePromptOpen = true;
+  }
+
+  closePurchasePrompt(): void {
+    this.isPurchasePromptOpen = false;
+  }
+
   dispatch(action: GameAction): void {
     switch (action.type) {
       case 'START_GAME': {
@@ -91,6 +133,9 @@ class GameSessionStore {
         this.traversingIndex = null;
         this.destinationIndex = null;
         this.animatingPlayerId = null;
+        this.isPortfolioOpen = false;
+        this.isTransactionsOpen = false;
+        this.isPurchasePromptOpen = false;
 
         this.gameState = createGameState(action.payload, this.board);
         this.selectedTileIndex = 0;
@@ -122,6 +167,36 @@ class GameSessionStore {
         break;
       }
 
+      case 'PURCHASE_ASSET': {
+        if (!this.gameState) break;
+        try {
+          const { state: nextState } = purchaseAsset(this.gameState, action.payload.assetId);
+          this.gameState = nextState;
+          this.isPurchasePromptOpen = false;
+        } catch (err) {
+          console.error('Purchase failed:', err);
+        }
+        break;
+      }
+
+      case 'DECLINE_PURCHASE': {
+        if (!this.gameState) break;
+        this.gameState = declinePurchase(this.gameState);
+        this.isPurchasePromptOpen = false;
+        break;
+      }
+
+      case 'SELL_ASSET': {
+        if (!this.gameState) break;
+        try {
+          const { state: nextState } = sellAsset(this.gameState, action.payload.assetId);
+          this.gameState = nextState;
+        } catch (err) {
+          console.error('Sale failed:', err);
+        }
+        break;
+      }
+
       case 'END_TURN':
       case 'NEXT_TURN': {
         this.handleEndTurn();
@@ -134,6 +209,9 @@ class GameSessionStore {
         this.traversingIndex = null;
         this.destinationIndex = null;
         this.animatingPlayerId = null;
+        this.isPortfolioOpen = false;
+        this.isTransactionsOpen = false;
+        this.isPurchasePromptOpen = false;
         this.gameState = null;
         this.currentView = 'MENU';
         this.selectedTileIndex = 0;
@@ -142,19 +220,18 @@ class GameSessionStore {
     }
   }
 
-  private async handleRollDice(forcedDice?: [number, number]): Promise<void> {
-    if (!this.gameState || !canRollDice(this.gameState)) {
+  private async handleRollDice(forcedDice?: [number, number]): Promise<void> {    if (!this.gameState || !canRollDice(this.gameState)) {
       return;
     }
 
     this.clearBotTimer();
+    this.isPurchasePromptOpen = false;
     const currentRun = ++this.animationRunId;
     const activePlayer = this.gameState.players[this.gameState.activePlayerIndex];
 
     try {
       // 1. Authoritative Engine Dice Roll
-      const { state: rolledState, movement } = rollDice(this.gameState, {
-        rng: this.rng,
+      const { state: rolledState, movement } = rollDice(this.gameState, {        rng: this.rng,
         dice: forcedDice
       });
 
@@ -201,14 +278,39 @@ class GameSessionStore {
       this.gameState = resolvedState;
       this.selectedTileIndex = movement.destinationIndex;
 
-      // If active player is Bot AI, automatically schedule ending turn
+      // If active player is human and landed on unowned asset, open purchase modal
+      if (activePlayer.controller === 'HUMAN' && resolvedState.currentTurn?.pendingPurchase) {
+        this.isPurchasePromptOpen = true;
+      }
+
+      // If active player is Bot AI, make bot economic decision and schedule ending turn
       if (activePlayer.controller === 'AI') {
         this.isProcessingBot = true;
         this.botTimeout = setTimeout(() => {
           if (currentRun === this.animationRunId && this.gameState?.phase === 'TURN_COMPLETE') {
-            this.handleEndTurn(true);
+            const pendingAsset = this.gameState.currentTurn?.pendingPurchase;
+            if (pendingAsset) {
+              const bot = this.gameState.players[this.gameState.activePlayerIndex];
+              const check = canPurchaseAsset(this.gameState, pendingAsset.id);
+              if (
+                check.allowed &&
+                bot.balance - pendingAsset.cost >= GAME_CONSTANTS.BOT_MIN_CASH_RESERVE
+              ) {
+                const { state: boughtState } = purchaseAsset(this.gameState, pendingAsset.id);
+                this.gameState = boughtState;
+              } else {
+                this.gameState = declinePurchase(this.gameState);
+              }
+            }
+
+            // Schedule ending the turn after bot decision
+            this.botTimeout = setTimeout(() => {
+              if (currentRun === this.animationRunId && this.gameState?.phase === 'TURN_COMPLETE') {
+                this.handleEndTurn(true);
+              }
+            }, 1000);
           }
-        }, 1200);
+        }, 1100);
       }
     } catch (err) {
       console.error('Error during dice roll / movement execution:', err);
@@ -233,6 +335,7 @@ class GameSessionStore {
     this.traversingIndex = null;
     this.destinationIndex = null;
     this.animatingPlayerId = null;
+    this.isPurchasePromptOpen = false;
 
     try {
       this.gameState = endTurn(this.gameState);

@@ -3,6 +3,7 @@ import type { BoardTile } from './board';
 import type { GameConfig } from './game-config';
 import type { MovementResult } from '../engine/movement';
 import type { TileResolutionResult } from '../engine/tile-resolution';
+import type { AssetOwnership, Transaction, AssetDefinition } from './economy';
 
 export type GamePhase =
   | 'READY'
@@ -28,6 +29,13 @@ export interface ActiveTurnInfo {
   dice: [number, number];
   movement: MovementResult;
   resolution?: TileResolutionResult;
+  pendingPurchase?: AssetDefinition | null;
+  rentPaid?: {
+    ownerId: string;
+    ownerName: string;
+    amount: number;
+    unpaid: number;
+  } | null;
 }
 
 export interface GameState {
@@ -39,6 +47,8 @@ export interface GameState {
   currentRound: number;
   phase: GamePhase;
   board: BoardTile[];
+  ownerships: AssetOwnership[];
+  transactions: Transaction[];
   lastDiceRoll?: [number, number];
   currentTurn?: ActiveTurnInfo | null;
   selectedTileIndex: number | null;

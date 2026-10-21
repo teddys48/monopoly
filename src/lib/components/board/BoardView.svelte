@@ -1,10 +1,15 @@
 <script lang="ts">
   import type { BoardTile } from '../../game/domain/board';
   import type { Player } from '../../game/domain/player';
+  import { gameSession } from '../../stores/game.svelte';
+  import { getAssetByTileId } from '../../game/data/assets';
   import BoardTileItem from './BoardTileItem.svelte';
   import TileDetailModal from './TileDetailModal.svelte';
   import PlayerLegend from './PlayerLegend.svelte';
   import GameCenterDashboard from '../dashboard/GameCenterDashboard.svelte';
+  import AssetPurchaseModal from '../economy/AssetPurchaseModal.svelte';
+  import PortfolioModal from '../economy/PortfolioModal.svelte';
+  import TransactionHistoryModal from '../economy/TransactionHistoryModal.svelte';
 
   interface Props {
     board: BoardTile[];
@@ -32,6 +37,10 @@
     onendTurn
   }: Props = $props();
 
+  const activePlayer = $derived(players[activePlayerIndex] ?? players[0]);
+  const ownerships = $derived(gameSession.gameState?.ownerships ?? []);
+  const transactions = $derived(gameSession.gameState?.transactions ?? []);
+
   function getPlayersOnTile(tileIndex: number): Player[] {
     return players.filter((p) => {
       if (p.id === animatingPlayerId && traversingIndex !== null && traversingIndex !== undefined) {
@@ -41,10 +50,26 @@
     });
   }
 
+  function getTileOwner(tileId: string): Player | null {
+    const asset = getAssetByTileId(tileId);
+    if (!asset) return null;
+    const own = ownerships.find((o) => o.assetId === asset.id);
+    if (!own) return null;
+    return players.find((p) => p.id === own.ownerPlayerId) ?? null;
+  }
+
   const selectedTile = $derived(
     selectedTileIndex !== null && selectedTileIndex !== undefined && selectedTileIndex >= 0
       ? (board[selectedTileIndex] ?? null)
       : null
+  );
+
+  const selectedTileAsset = $derived(
+    selectedTile ? getAssetByTileId(selectedTile.id) : null
+  );
+
+  const selectedTileOwner = $derived(
+    selectedTile ? getTileOwner(selectedTile.id) : null
   );
 
   /**
@@ -81,6 +106,7 @@
       <!-- Render the 16 Perimeter Tiles -->
       {#each board as tile (tile.id)}
         {@const pos = tileGridPositions[tile.index]}
+        {@const owner = getTileOwner(tile.id)}
         <div
           style="grid-row: {pos.row}; grid-column: {pos.col};"
           class="h-full w-full min-h-0 min-w-0 overflow-hidden flex flex-col"
@@ -88,6 +114,7 @@
           <BoardTileItem
             {tile}
             playersOnTile={getPlayersOnTile(tile.index)}
+            ownerPlayer={owner}
             isSelected={selectedTileIndex === tile.index}
             isTraversing={traversingIndex === tile.index}
             isDestination={destinationIndex === tile.index}
@@ -144,10 +171,12 @@
 
       <div class="grid grid-cols-2 gap-2.5 auto-rows-fr">
         {#each board as tile (tile.id)}
+          {@const owner = getTileOwner(tile.id)}
           <div class="h-[105px] min-h-0 overflow-hidden">
             <BoardTileItem
               {tile}
               playersOnTile={getPlayersOnTile(tile.index)}
+              ownerPlayer={owner}
               isSelected={selectedTileIndex === tile.index}
               isTraversing={traversingIndex === tile.index}
               isDestination={destinationIndex === tile.index}
@@ -160,14 +189,61 @@
   </div>
 
   <!-- Player Legend Bar -->
-  <PlayerLegend {players} {activePlayerIndex} {board} />
+  <PlayerLegend
+    {players}
+    {activePlayerIndex}
+    {board}
+    {ownerships}
+    onopenPortfolio={(pId) => gameSession.openPortfolio(pId)}
+  />
 
   <!-- Selected Tile Inspector Sheet/Modal -->
   {#if selectedTile}
     <TileDetailModal
       tile={selectedTile}
       playersOnTile={getPlayersOnTile(selectedTile.index)}
+      ownerPlayer={selectedTileOwner}
+      asset={selectedTileAsset}
       onclose={() => onselectTile(-1)}
+    />
+  {/if}
+
+  <!-- Asset Purchase Modal (When landing on available asset) -->
+  {#if gameSession.isPurchasePromptOpen && gameSession.pendingPurchase && activePlayer}
+    <AssetPurchaseModal
+      asset={gameSession.pendingPurchase}
+      player={activePlayer}
+      onpurchase={(assetId: string) => {
+        gameSession.dispatch({ type: 'PURCHASE_ASSET', payload: { assetId } });
+      }}
+      ondecline={() => {
+        gameSession.dispatch({ type: 'DECLINE_PURCHASE' });
+      }}
+    />
+  {/if}
+
+  <!-- Portfolio Management Modal -->
+  {#if gameSession.isPortfolioOpen && activePlayer}
+    <PortfolioModal
+      {players}
+      activePlayerId={activePlayer.id}
+      selectedPlayerId={gameSession.portfolioPlayerId ?? activePlayer.id}
+      {ownerships}
+      onselectPlayer={(pId: string) => {
+        gameSession.portfolioPlayerId = pId;
+      }}
+      onsellAsset={(assetId: string) => {
+        gameSession.dispatch({ type: 'SELL_ASSET', payload: { assetId } });
+      }}
+      onclose={() => gameSession.closePortfolio()}
+    />
+  {/if}
+
+  <!-- Transaction History Modal -->
+  {#if gameSession.isTransactionsOpen}
+    <TransactionHistoryModal
+      {transactions}
+      onclose={() => gameSession.closeTransactions()}
     />
   {/if}
 </div>

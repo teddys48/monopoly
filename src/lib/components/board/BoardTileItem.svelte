@@ -20,12 +20,14 @@
     TrendingUp,
     Building2,
     HelpCircle,
-    Target
+    Target,
+    Crown
   } from 'lucide-svelte';
 
   interface Props {
     tile: BoardTile;
     playersOnTile?: Player[];
+    ownerPlayer?: Player | null;
     isSelected?: boolean;
     isTraversing?: boolean;
     isDestination?: boolean;
@@ -35,6 +37,7 @@
   let {
     tile,
     playersOnTile = [],
+    ownerPlayer = null,
     isSelected = false,
     isTraversing = false,
     isDestination = false,
@@ -83,19 +86,32 @@
   class="relative flex h-full w-full min-h-0 min-w-0 flex-col justify-between rounded-lg border-2 border-black p-2 text-left transition-colors duration-150 cursor-pointer overflow-hidden select-none box-border {stateClasses}"
   aria-label="Petak {tile.index}: {tile.name}, tipe: {tile.type}"
 >
-  <!-- Top Category Color Bar (strictly 2px height) -->
+  <!-- Top Category Color Bar (strictly 2px height, turns to owner color if owned) -->
   <div
     class="absolute top-0 left-0 right-0 h-2 border-b-2 border-black shrink-0"
-    style="background-color: {tile.colorBadge};"
+    style="background-color: {ownerPlayer ? ownerPlayer.color : tile.colorBadge};"
   ></div>
 
   <!-- Tile Header (strictly 20px height) -->
   <div class="mt-1 flex h-5 w-full shrink-0 items-center justify-between gap-1 overflow-hidden">
-    <span
-      class="rounded border border-black bg-black px-1.5 py-0.2 text-[9px] font-black text-white shrink-0 leading-none"
-    >
-      #{tile.index}
-    </span>
+    <div class="flex items-center gap-1 overflow-hidden">
+      <span
+        class="rounded border border-black bg-black px-1.5 py-0.2 text-[9px] font-black text-white shrink-0 leading-none"
+      >
+        #{tile.index}
+      </span>
+
+      {#if ownerPlayer}
+        <span
+          class="flex items-center gap-0.5 rounded border border-black px-1 py-0.2 text-[8px] font-black text-white shrink-0 leading-none truncate max-w-[65px]"
+          style="background-color: {ownerPlayer.color};"
+          title="Dimiliki oleh {ownerPlayer.name}"
+        >
+          <Crown size={8} class="stroke-[3]" />
+          {ownerPlayer.name.split(' ')[0]}
+        </span>
+      {/if}
+    </div>
 
     {#if isDestination}
       <span
@@ -109,7 +125,7 @@
       >
         Langkah
       </span>
-    {:else}
+    {:else if !ownerPlayer}
       <span
         class="text-[9px] font-black uppercase tracking-wider text-neutral-600 dark:text-neutral-300 truncate max-w-[65px] leading-none"
       >
@@ -131,11 +147,17 @@
       <div class="text-[11px] font-black text-black truncate dark:text-white">
         {tile.shortName}
       </div>
-      <div class="text-[9px] font-black text-[#047857] dark:text-[#34d399] truncate">
-        {#if tile.baseCost}
-          {formatShortRupiah(tile.baseCost)}
+      <div class="text-[9px] font-black truncate">
+        {#if ownerPlayer}
+          <span class="text-[#dc2626] dark:text-[#f87171]">
+            Sewa {formatShortRupiah(tile.baseRent ?? 0)}
+          </span>
+        {:else if tile.baseCost}
+          <span class="text-[#047857] dark:text-[#34d399]">
+            {formatShortRupiah(tile.baseCost)}
+          </span>
         {:else if tile.type === 'START'}
-          +Rp 2 Jt
+          <span class="text-[#047857] dark:text-[#34d399]">+Rp 2 Jt</span>
         {:else}
           <span class="font-bold text-neutral-500 dark:text-neutral-400">{tile.type}</span>
         {/if}

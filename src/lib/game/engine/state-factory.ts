@@ -43,6 +43,8 @@ export function createGameState(config: GameConfig, customBoard?: BoardTile[]): 
     currentRound: 1,
     phase: 'WAITING_ROLL',
     board: boardToUse.map((t) => ({ ...t })),
+    ownerships: [],
+    transactions: [],
     selectedTileIndex: 0,
     statusLog: [
       {

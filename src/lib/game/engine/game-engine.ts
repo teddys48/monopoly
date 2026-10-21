@@ -8,6 +8,8 @@ import { getNextActivePlayerIndex, isGameOver } from './turn-manager';
 import { createDefaultRng } from './rng';
 import { GAME_CONSTANTS } from '../rules/constants';
 import { formatRupiah } from '../../utils/currency';
+import { getAssetByTileId } from '../data/assets';
+import { getAssetOwner, executeRentPayment, calculatePlayerNetWorth } from './economy';
 
 export interface RollDiceOptions {
   dice?: [number, number];
@@ -19,6 +21,8 @@ function cloneState(state: GameState): GameState {
     ...state,
     players: state.players.map((p) => ({ ...p })),
     board: state.board.map((b) => ({ ...b })),
+    ownerships: state.ownerships ? state.ownerships.map((o) => ({ ...o })) : [],
+    transactions: state.transactions ? state.transactions.map((t) => ({ ...t })) : [],
     statusLog: state.statusLog.map((l) => ({ ...l })),
     currentTurn: state.currentTurn
       ? {
@@ -27,7 +31,11 @@ function cloneState(state: GameState): GameState {
             ...state.currentTurn.movement,
             traversedIndices: [...state.currentTurn.movement.traversedIndices]
           },
-          resolution: state.currentTurn.resolution ? { ...state.currentTurn.resolution } : undefined
+          resolution: state.currentTurn.resolution ? { ...state.currentTurn.resolution } : undefined,
+          pendingPurchase: state.currentTurn.pendingPurchase
+            ? { ...state.currentTurn.pendingPurchase }
+            : null,
+          rentPaid: state.currentTurn.rentPaid ? { ...state.currentTurn.rentPaid } : null
         }
       : null
   };
@@ -87,7 +95,9 @@ export function rollDice(
   nextState.currentTurn = {
     playerId: activePlayer.id,
     dice,
-    movement
+    movement,
+    pendingPurchase: null,
+    rentPaid: null
   };
 
   nextState.statusLog.unshift({
@@ -161,8 +171,21 @@ export function finishMovement(currentState: GameState): GameState {
 
   // Apply configurable lap salary if passed start
   if (movement.crossedStart && GAME_CONSTANTS.SALARY_PER_LAP > 0) {
+    const prevBalance = activePlayer.balance;
     activePlayer.balance += GAME_CONSTANTS.SALARY_PER_LAP;
-    activePlayer.netWorth += GAME_CONSTANTS.SALARY_PER_LAP;
+    activePlayer.netWorth = calculatePlayerNetWorth(activePlayer, nextState.ownerships);
+
+    nextState.transactions.unshift({
+      id: `tx-salary-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      round: nextState.currentRound,
+      playerId: activePlayer.id,
+      type: 'SALARY',
+      amount: GAME_CONSTANTS.SALARY_PER_LAP,
+      previousBalance: prevBalance,
+      resultingBalance: activePlayer.balance,
+      description: `${activePlayer.name} menerima Gaji Pokok putaran sebesar ${formatRupiah(GAME_CONSTANTS.SALARY_PER_LAP)}.`,
+      timestamp: Date.now()
+    });
 
     nextState.statusLog.unshift({
       id: `log-salary-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -178,6 +201,7 @@ export function finishMovement(currentState: GameState): GameState {
 
 /**
  * Resolves the destination tile where the player landed.
+ * Handles economic impacts (rent, unowned asset purchase opportunity, tax).
  * Phase transitions: RESOLVING_TILE -> TURN_COMPLETE
  */
 export function resolveTurnTile(currentState: GameState): {
@@ -200,19 +224,57 @@ export function resolveTurnTile(currentState: GameState): {
 
   const resolution = resolveTile(destinationTile, activePlayer, {
     crossedStart: nextState.currentTurn!.movement.crossedStart,
-    salaryPerLap: GAME_CONSTANTS.SALARY_PER_LAP
+    salaryPerLap: GAME_CONSTANTS.SALARY_PER_LAP,
+    ownerships: nextState.ownerships,
+    players: nextState.players
   });
 
-  // Apply financial cost if tile specifies an expense (e.g. configured tax)
-  if (resolution.financialImpact.amount < 0) {
+  // Handle asset mechanics
+  const asset = destinationTile ? getAssetByTileId(destinationTile.id) : undefined;
+  if (asset) {
+    const existingOwnership = getAssetOwner(nextState.ownerships, asset.id);
+    if (existingOwnership) {
+      if (existingOwnership.ownerPlayerId !== activePlayer.id) {
+        // Opponent owns the asset: Execute rent payment
+        const owner = nextState.players.find((p) => p.id === existingOwnership.ownerPlayerId);
+        if (owner) {
+          const rentResult = executeRentPayment(nextState, asset, owner, activePlayer);
+          nextState.currentTurn!.rentPaid = {
+            ownerId: owner.id,
+            ownerName: owner.name,
+            amount: rentResult.amountPaid,
+            unpaid: rentResult.unpaid
+          };
+        }
+      }
+    } else {
+      // Asset is unowned: Available for purchase
+      nextState.currentTurn!.pendingPurchase = asset;
+    }
+  } else if (resolution.financialImpact.amount < 0) {
+    // Non-asset expense (e.g. TAX tile)
     const expense = Math.abs(resolution.financialImpact.amount);
-    activePlayer.balance = Math.max(0, activePlayer.balance - expense);
-    activePlayer.netWorth = Math.max(0, activePlayer.netWorth - expense);
+    const prevBalance = activePlayer.balance;
+    const actualDeduction = Math.min(activePlayer.balance, expense);
+    activePlayer.balance -= actualDeduction;
+    activePlayer.netWorth = calculatePlayerNetWorth(activePlayer, nextState.ownerships);
+
+    nextState.transactions.unshift({
+      id: `tx-tax-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      round: nextState.currentRound,
+      playerId: activePlayer.id,
+      type: 'TAX_EXPENSE',
+      amount: actualDeduction,
+      previousBalance: prevBalance,
+      resultingBalance: activePlayer.balance,
+      description: `${activePlayer.name} membayar ${resolution.financialImpact.reason}: -${formatRupiah(actualDeduction)}.`,
+      timestamp: Date.now()
+    });
 
     nextState.statusLog.unshift({
       id: `log-tax-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       timestamp: Date.now(),
-      message: `${activePlayer.name} membayar ${resolution.financialImpact.reason}: -${formatRupiah(expense)}.`,
+      message: `${activePlayer.name} membayar ${resolution.financialImpact.reason}: -${formatRupiah(actualDeduction)}.`,
       type: 'warning'
     });
   }

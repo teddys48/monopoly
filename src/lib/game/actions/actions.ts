@@ -6,6 +6,9 @@ export type GameAction =
   | { type: 'START_MOVEMENT' }
   | { type: 'FINISH_MOVEMENT' }
   | { type: 'RESOLVE_TILE' }
+  | { type: 'PURCHASE_ASSET'; payload: { assetId: string } }
+  | { type: 'DECLINE_PURCHASE' }
+  | { type: 'SELL_ASSET'; payload: { assetId: string } }
   | { type: 'END_TURN' }
   | { type: 'SELECT_TILE'; payload: { tileIndex: number } }
   | { type: 'CLEAR_SELECTION' }
@@ -27,6 +30,15 @@ export const gameActions = {
   },
   resolveTile(): GameAction {
     return { type: 'RESOLVE_TILE' };
+  },
+  purchaseAsset(assetId: string): GameAction {
+    return { type: 'PURCHASE_ASSET', payload: { assetId } };
+  },
+  declinePurchase(): GameAction {
+    return { type: 'DECLINE_PURCHASE' };
+  },
+  sellAsset(assetId: string): GameAction {
+    return { type: 'SELL_ASSET', payload: { assetId } };
   },
   endTurn(): GameAction {
     return { type: 'END_TURN' };
