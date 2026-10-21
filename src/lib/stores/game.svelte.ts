@@ -206,7 +206,7 @@ class GameSessionStore {
         this.isProcessingBot = true;
         this.botTimeout = setTimeout(() => {
           if (currentRun === this.animationRunId && this.gameState?.phase === 'TURN_COMPLETE') {
-            this.handleEndTurn();
+            this.handleEndTurn(true);
           }
         }, 1200);
       }
@@ -218,8 +218,13 @@ class GameSessionStore {
     }
   }
 
-  private handleEndTurn(): void {
+  private handleEndTurn(force = false): void {
     if (!this.gameState || this.gameState.phase !== 'TURN_COMPLETE') {
+      return;
+    }
+
+    const activePlayer = this.gameState.players[this.gameState.activePlayerIndex];
+    if (!force && activePlayer?.controller === 'AI') {
       return;
     }
 

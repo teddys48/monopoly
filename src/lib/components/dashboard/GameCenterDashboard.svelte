@@ -72,7 +72,11 @@
     if (isRolling) return 'Dadu sedang bergulir...';
     if (isMoving) return 'Pion sedang melangkah...';
     if (isResolving) return 'Sedang mengevaluasi petak...';
-    if (isTurnComplete) return 'Tekan tombol "Akhiri Giliran" untuk melanjutkan.';
+    if (isTurnComplete) {
+      return isBotTurn
+        ? 'Bot AI sedang menyelesaikan gilirannya...'
+        : 'Tekan tombol "Akhiri Giliran" untuk melanjutkan.';
+    }
     if (isBotTurn && gameSession.isProcessingBot) return 'Bot AI sedang bergerak...';
     return null;
   });
@@ -172,9 +176,15 @@
           variant="primary"
           size="md"
           onclick={handleEndTurn}
+          disabled={isBotTurn}
           class="w-full sm:w-auto bg-[#86efac] text-black hover:bg-[#4ade80] py-1.5"
         >
-          <ArrowRight size={15} class="stroke-[3]" /> Akhiri Giliran
+          <ArrowRight size={15} class="stroke-[3]" />
+          {#if isBotTurn}
+            Bot Memproses...
+          {:else}
+            Akhiri Giliran
+          {/if}
         </Button>
       {:else}
         <Button
