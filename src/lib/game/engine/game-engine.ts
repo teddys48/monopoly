@@ -234,7 +234,19 @@ export function resolveTurnTile(currentState: GameState): {
 }
 
 /**
+ * Checks whether the current turn's dice total grants the player a bonus roll.
+ */
+export function hasBonusRoll(state: GameState): boolean {
+  const dice = state.currentTurn?.dice;
+  if (!dice) {
+    return false;
+  }
+  return dice[0] + dice[1] === GAME_CONSTANTS.BONUS_ROLL_TOTAL;
+}
+
+/**
  * Ends the active player's turn and switches to the next eligible player.
+ * If the dice total equals BONUS_ROLL_TOTAL, the same player keeps the turn.
  * Phase transitions: TURN_COMPLETE -> READY / GAME_OVER
  */
 export function endTurn(currentState: GameState): GameState {
@@ -255,6 +267,21 @@ export function endTurn(currentState: GameState): GameState {
       message: 'Permainan telah berakhir.',
       type: 'warning'
     });
+    return nextState;
+  }
+
+  if (hasBonusRoll(nextState)) {
+    const activePlayer = nextState.players[nextState.activePlayerIndex];
+    nextState.currentTurn = null;
+    nextState.phase = 'READY';
+
+    nextState.statusLog.unshift({
+      id: `log-bonus-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: Date.now(),
+      message: `${activePlayer.name} mendapat total dadu ${GAME_CONSTANTS.BONUS_ROLL_TOTAL} dan berhak melempar dadu lagi!`,
+      type: 'success'
+    });
+
     return nextState;
   }
 

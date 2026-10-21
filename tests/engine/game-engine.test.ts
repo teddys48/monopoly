@@ -94,6 +94,18 @@ describe('Game Engine State Machine & Core Loop', () => {
     expect(finished.players[0].balance).toBe(initialBalance + 2_000_000);
   });
 
+  it('keeps the same player when the dice total is 12', () => {
+    let state = createGameState(sampleConfig);
+
+    state = executeFullTurn(state, { dice: [6, 6] });
+
+    expect(state.phase).toBe('READY');
+    expect(state.activePlayerIndex).toBe(0);
+    expect(state.currentRound).toBe(1);
+    expect(state.currentTurn).toBeNull();
+    expect(state.statusLog[0].message).toMatch(/melempar dadu lagi/);
+  });
+
   it('cycles through multiple players and increments currentRound on wraparound', () => {
     let state = createGameState(sampleConfig);
     expect(state.currentRound).toBe(1);
