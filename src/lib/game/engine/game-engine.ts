@@ -10,35 +10,12 @@ import { GAME_CONSTANTS } from '../rules/constants';
 import { formatRupiah } from '../../utils/currency';
 import { getAssetByTileId } from '../data/assets';
 import { getAssetOwner, executeRentPayment, calculatePlayerNetWorth } from './economy';
+import { cloneGameState } from './clone-state';
+import { processMonthlySettlement } from './monthly-settlement';
 
 export interface RollDiceOptions {
   dice?: [number, number];
   rng?: Rng;
-}
-
-function cloneState(state: GameState): GameState {
-  return {
-    ...state,
-    players: state.players.map((p) => ({ ...p })),
-    board: state.board.map((b) => ({ ...b })),
-    ownerships: state.ownerships ? state.ownerships.map((o) => ({ ...o })) : [],
-    transactions: state.transactions ? state.transactions.map((t) => ({ ...t })) : [],
-    statusLog: state.statusLog.map((l) => ({ ...l })),
-    currentTurn: state.currentTurn
-      ? {
-          ...state.currentTurn,
-          movement: {
-            ...state.currentTurn.movement,
-            traversedIndices: [...state.currentTurn.movement.traversedIndices]
-          },
-          resolution: state.currentTurn.resolution ? { ...state.currentTurn.resolution } : undefined,
-          pendingPurchase: state.currentTurn.pendingPurchase
-            ? { ...state.currentTurn.pendingPurchase }
-            : null,
-          rentPaid: state.currentTurn.rentPaid ? { ...state.currentTurn.rentPaid } : null
-        }
-      : null
-  };
 }
 
 /**
@@ -69,7 +46,7 @@ export function rollDice(
     );
   }
 
-  const nextState = cloneState(currentState);
+  const nextState = cloneGameState(currentState);
   const activePlayer = nextState.players[nextState.activePlayerIndex];
 
   // Determine dice values
@@ -129,7 +106,7 @@ export function startMovement(currentState: GameState): GameState {
     throw new Error('Data giliran saat ini (currentTurn) tidak ditemukan.');
   }
 
-  const nextState = cloneState(currentState);
+  const nextState = cloneGameState(currentState);
   const activePlayer = nextState.players[nextState.activePlayerIndex];
   const movement = nextState.currentTurn!.movement;
   const destinationTile = nextState.board[movement.destinationIndex];
@@ -161,7 +138,7 @@ export function finishMovement(currentState: GameState): GameState {
     throw new Error('Data giliran saat ini (currentTurn) tidak ditemukan.');
   }
 
-  const nextState = cloneState(currentState);
+  const nextState = cloneGameState(currentState);
   const activePlayer = nextState.players[nextState.activePlayerIndex];
   const movement = nextState.currentTurn!.movement;
 
@@ -173,7 +150,7 @@ export function finishMovement(currentState: GameState): GameState {
   if (movement.crossedStart && GAME_CONSTANTS.SALARY_PER_LAP > 0) {
     const prevBalance = activePlayer.balance;
     activePlayer.balance += GAME_CONSTANTS.SALARY_PER_LAP;
-    activePlayer.netWorth = calculatePlayerNetWorth(activePlayer, nextState.ownerships);
+    activePlayer.netWorth = calculatePlayerNetWorth(activePlayer, nextState.ownerships, nextState.loans);
 
     nextState.transactions.unshift({
       id: `tx-salary-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -218,7 +195,7 @@ export function resolveTurnTile(currentState: GameState): {
     throw new Error('Data giliran saat ini (currentTurn) tidak ditemukan.');
   }
 
-  const nextState = cloneState(currentState);
+  const nextState = cloneGameState(currentState);
   const activePlayer = nextState.players[nextState.activePlayerIndex];
   const destinationTile = nextState.board[activePlayer.position];
 
@@ -257,7 +234,7 @@ export function resolveTurnTile(currentState: GameState): {
     const prevBalance = activePlayer.balance;
     const actualDeduction = Math.min(activePlayer.balance, expense);
     activePlayer.balance -= actualDeduction;
-    activePlayer.netWorth = calculatePlayerNetWorth(activePlayer, nextState.ownerships);
+    activePlayer.netWorth = calculatePlayerNetWorth(activePlayer, nextState.ownerships, nextState.loans);
 
     nextState.transactions.unshift({
       id: `tx-tax-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -309,6 +286,8 @@ export function hasBonusRoll(state: GameState): boolean {
 /**
  * Ends the active player's turn and switches to the next eligible player.
  * If the dice total equals BONUS_ROLL_TOTAL, the same player keeps the turn.
+ * When every eligible player has completed their turn (wrapped around),
+ * the discrete monthly economic cycle advances and settles recurring financial rules.
  * Phase transitions: TURN_COMPLETE -> READY / GAME_OVER
  */
 export function endTurn(currentState: GameState): GameState {
@@ -318,7 +297,7 @@ export function endTurn(currentState: GameState): GameState {
     );
   }
 
-  const nextState = cloneState(currentState);
+  let nextState = cloneGameState(currentState);
 
   // Check if game is over
   if (isGameOver(nextState.players)) {
@@ -355,6 +334,8 @@ export function endTurn(currentState: GameState): GameState {
   nextState.activePlayerIndex = nextIndex;
   if (wrappedAround) {
     nextState.currentRound += 1;
+    // Process monthly settlement for the completed round
+    nextState = processMonthlySettlement(nextState);
     nextState.statusLog.unshift({
       id: `log-round-${Date.now()}-${nextState.currentRound}`,
       timestamp: Date.now(),

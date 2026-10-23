@@ -3,7 +3,16 @@ import type { BoardTile } from './board';
 import type { GameConfig } from './game-config';
 import type { MovementResult } from '../engine/movement';
 import type { TileResolutionResult } from '../engine/tile-resolution';
-import type { AssetOwnership, Transaction, AssetDefinition } from './economy';
+import type {
+  AssetOwnership,
+  Transaction,
+  AssetDefinition,
+  EconomicIndicators,
+  Loan,
+  MonthlySettlement,
+  LivingExpenseConfig
+} from './economy';
+import type { ActiveEconomicEvent } from './events';
 
 export type GamePhase =
   | 'READY'
@@ -45,6 +54,14 @@ export interface GameState {
   players: Player[];
   activePlayerIndex: number;
   currentRound: number;
+  currentMonth: number;
+  lastSettledMonth: number;
+  indicators: EconomicIndicators;
+  loans: Loan[];
+  activeEvents: ActiveEconomicEvent[];
+  settlements: MonthlySettlement[];
+  livingExpenses: LivingExpenseConfig;
+  lastSettlementSummary?: MonthlySettlement | null;
   phase: GamePhase;
   board: BoardTile[];
   ownerships: AssetOwnership[];

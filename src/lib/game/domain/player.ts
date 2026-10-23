@@ -1,3 +1,5 @@
+import type { EmploymentState } from './economy';
+
 export type PlayerController = 'HUMAN' | 'AI';
 
 export interface Player {
@@ -10,4 +12,6 @@ export interface Player {
   position: number;
   netWorth: number;
   isActive: boolean;
+  employment?: EmploymentState;
+  unpaidObligations?: number;
 }

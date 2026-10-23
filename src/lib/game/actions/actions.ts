@@ -13,6 +13,11 @@ export type GameAction =
   | { type: 'SELECT_TILE'; payload: { tileIndex: number } }
   | { type: 'CLEAR_SELECTION' }
   | { type: 'NEXT_TURN' } // alias for END_TURN
+  | { type: 'APPLY_LOAN'; payload: { amount: number; playerId?: string; termMonths?: number } }
+  | { type: 'REPAY_LOAN'; payload: { loanId: string; amount: number; playerId?: string } }
+  | { type: 'RESOLVE_OBLIGATIONS'; payload: { amount: number; playerId?: string } }
+  | { type: 'TRIGGER_SETTLEMENT' }
+  | { type: 'TRIGGER_ECONOMIC_EVENT'; payload: { eventId: string; targetPlayerId?: string } }
   | { type: 'RESET_GAME' };
 
 export const gameActions = {
@@ -51,6 +56,21 @@ export const gameActions = {
   },
   nextTurn(): GameAction {
     return { type: 'NEXT_TURN' };
+  },
+  applyLoan(amount: number, playerId?: string, termMonths?: number): GameAction {
+    return { type: 'APPLY_LOAN', payload: { amount, playerId, termMonths } };
+  },
+  repayLoan(loanId: string, amount: number, playerId?: string): GameAction {
+    return { type: 'REPAY_LOAN', payload: { loanId, amount, playerId } };
+  },
+  resolveObligations(amount: number, playerId?: string): GameAction {
+    return { type: 'RESOLVE_OBLIGATIONS', payload: { amount, playerId } };
+  },
+  triggerSettlement(): GameAction {
+    return { type: 'TRIGGER_SETTLEMENT' };
+  },
+  triggerEconomicEvent(eventId: string, targetPlayerId?: string): GameAction {
+    return { type: 'TRIGGER_ECONOMIC_EVENT', payload: { eventId, targetPlayerId } };
   },
   resetGame(): GameAction {
     return { type: 'RESET_GAME' };

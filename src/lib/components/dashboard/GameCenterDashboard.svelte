@@ -5,6 +5,7 @@
   import { formatRupiah, formatShortRupiah } from '../../utils/currency';
   import {
     calculatePlayerAssetValuation,
+    calculatePlayerTotalDebt,
     calculatePlayerNetWorth
   } from '../../game/engine/economy';
   import DicePair from '../dice/DicePair.svelte';
@@ -24,7 +25,8 @@
     Briefcase,
     Receipt,
     ShoppingBag,
-    Coins
+    Coins,
+    Activity
   } from 'lucide-svelte';
 
   interface Props {
@@ -62,6 +64,7 @@
 
   const ownerships = $derived(gameSession.gameState?.ownerships ?? []);
   const transactions = $derived(gameSession.gameState?.transactions ?? []);
+  const loans = $derived(gameSession.gameState?.loans ?? []);
 
   const activePlayerOwnerships = $derived(
     ownerships.filter((o) => o.ownerPlayerId === activePlayer?.id)
@@ -69,9 +72,16 @@
   const activePlayerValuation = $derived(
     calculatePlayerAssetValuation(activePlayer?.id ?? '', ownerships)
   );
-  const activePlayerNetWorth = $derived(
-    activePlayer ? calculatePlayerNetWorth(activePlayer, ownerships) : 0
+  const activePlayerDebt = $derived(
+    calculatePlayerTotalDebt(activePlayer?.id ?? '', loans)
   );
+  const activePlayerNetWorth = $derived(
+    activePlayer ? calculatePlayerNetWorth(activePlayer, ownerships, loans) : 0
+  );
+
+  const currentMonth = $derived(gameSession.gameState?.currentMonth ?? 1);
+  const inflationIndex = $derived(gameSession.gameState?.indicators.inflationIndex ?? 1.0);
+  const economicCondition = $derived(gameSession.gameState?.indicators.condition ?? 'STABLE');
 
   const phaseBadgeInfo = $derived.by(() => {
     switch (currentPhase) {
@@ -136,7 +146,11 @@
   <div class="flex items-center justify-between border-b-2 border-black pb-1.5 shrink-0 gap-1 flex-wrap">
     <div class="flex items-center gap-1.5 flex-wrap">
       <Badge variant="success" class="text-xs uppercase font-black px-2 py-0.5">
-        Putaran #{gameSession.gameState?.currentRound ?? 1}
+        Bulan #{currentMonth}
+      </Badge>
+
+      <Badge variant="purple" class="text-xs uppercase font-black px-2 py-0.5" >
+        Inflasi: {(inflationIndex * 100).toFixed(1)}% ({economicCondition})
       </Badge>
 
       <Badge variant={phaseBadgeInfo.variant} class="text-xs uppercase font-black px-2 py-0.5">
@@ -149,11 +163,21 @@
       <Button
         variant="outline"
         size="sm"
+        onclick={() => gameSession.openEconomicDashboard()}
+        class="text-xs py-0.5 px-2 bg-white text-black dark:bg-[#20242e] dark:text-white shrink-0 font-black"
+        title="Buka Dashboard Ekonomi WNI"
+      >
+        <Activity size={12} class="stroke-[2.5]" /> Ekonomi
+      </Button>
+
+      <Button
+        variant="outline"
+        size="sm"
         onclick={() => gameSession.openPortfolio(activePlayer.id)}
         class="text-xs py-0.5 px-2 bg-white text-black dark:bg-[#20242e] dark:text-white shrink-0"
         title="Lihat Portofolio Aset"
       >
-        <Briefcase size={12} class="stroke-[2.5]" /> Portofolio ({activePlayerOwnerships.length})
+        <Briefcase size={12} class="stroke-[2.5]" /> Aset ({activePlayerOwnerships.length})
       </Button>
 
       <Button
@@ -185,7 +209,7 @@
       <span
         class="text-[9px] font-black uppercase tracking-wider text-neutral-600 dark:text-neutral-400"
       >
-        Pemain Aktif & Neraca Keuangan
+        Pemain Aktif & Neraca Finansial
       </span>
 
       <Badge variant={isBotTurn ? 'purple' : 'info'} class="text-[9px] px-1.5 py-0">
@@ -211,7 +235,7 @@
             {activePlayer.name}
           </h3>
           <p class="text-[10px] font-bold text-neutral-600 dark:text-neutral-400 truncate">
-            Posisi: Petak #{activePlayer.position}
+            {activePlayer.employment?.jobTitle ?? 'Karyawan'} &bull; Petak #{activePlayer.position}
           </p>
         </div>
       </div>
@@ -236,6 +260,17 @@
           </span>
         </div>
 
+        {#if activePlayerDebt > 0}
+          <div class="border-l border-neutral-300 dark:border-neutral-700 pl-2">
+            <span class="text-[8px] font-bold uppercase text-amber-600 block">
+              Hutang
+            </span>
+            <span class="text-xs font-black text-amber-600">
+              {formatShortRupiah(activePlayerDebt)}
+            </span>
+          </div>
+        {/if}
+
         <div class="border-l border-neutral-300 dark:border-neutral-700 pl-2">
           <span class="text-[8px] font-bold uppercase text-neutral-500 dark:text-neutral-400 block">
             Net Worth
@@ -246,6 +281,20 @@
         </div>
       </div>
     </div>
+
+    {#if activePlayer.unpaidObligations && activePlayer.unpaidObligations > 0}
+      <div class="mt-2 rounded-lg border border-red-500 bg-red-50 p-1.5 text-[10px] font-bold text-red-700 dark:bg-red-950/40 dark:text-red-300 flex items-center justify-between">
+        <span class="flex items-center gap-1">
+          <AlertTriangle size={12} class="stroke-[2.5]" /> Ada tunggakan: {formatRupiah(activePlayer.unpaidObligations)}
+        </span>
+        <button
+          onclick={() => gameSession.openEconomicDashboard()}
+          class="underline font-black cursor-pointer"
+        >
+          Selesaikan &rarr;
+        </button>
+      </div>
+    {/if}
   </div>
 
   <!-- Interactive Purchase Opportunity Banner (Appears when landing on available asset) -->

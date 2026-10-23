@@ -14,6 +14,26 @@ export const GAME_CONSTANTS = {
   ASSET_VALUATION_POLICY: 'ACQUISITION_COST' as const
 } as const;
 
+export const ECONOMIC_CONSTANTS = {
+  DEFAULT_MONTHLY_SALARY: 4_000_000,
+  DEFAULT_FREELANCE_INCOME: 3_800_000,
+  DEFAULT_BUSINESS_INCOME: 5_000_000,
+  DEFAULT_LIVING_EXPENSES: {
+    housing: 1_200_000,
+    food: 1_000_000,
+    transport: 400_000,
+    utilities: 400_000
+  },
+  DEFAULT_TAX_RATE_PERCENT: 5,
+  BASE_INFLATION_INDEX: 1.0,
+  DEFAULT_MONTHLY_INFLATION_RATE: 0.005,
+  MAX_LOAN_AMOUNT: 5_000_000,
+  DEFAULT_LOAN_INTEREST_RATE_PERCENT: 3,
+  DEFAULT_LOAN_TERM_MONTHS: 5,
+  MONTHS_PER_GAME_YEAR: 12,
+  THR_BONUS_MULTIPLIER: 1.0
+} as const;
+
 export const PLAYER_COLORS = [
   { id: 'red', name: 'Merah Putih', hex: '#EF4444', border: '#B91C1C', text: '#FFFFFF' },
   { id: 'emerald', name: 'Hijau Zamrud', hex: '#10B981', border: '#047857', text: '#FFFFFF' },

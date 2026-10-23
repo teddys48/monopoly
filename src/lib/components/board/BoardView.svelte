@@ -10,6 +10,7 @@
   import AssetPurchaseModal from '../economy/AssetPurchaseModal.svelte';
   import PortfolioModal from '../economy/PortfolioModal.svelte';
   import TransactionHistoryModal from '../economy/TransactionHistoryModal.svelte';
+  import EconomicDashboardModal from '../economy/EconomicDashboardModal.svelte';
 
   interface Props {
     board: BoardTile[];
@@ -244,6 +245,13 @@
     <TransactionHistoryModal
       {transactions}
       onclose={() => gameSession.closeTransactions()}
+    />
+  {/if}
+  <!-- Economic Dashboard Modal -->
+  {#if gameSession.isEconomicDashboardOpen && gameSession.gameState}
+    <EconomicDashboardModal
+      gameState={gameSession.gameState}
+      onclose={() => gameSession.closeEconomicDashboard()}
     />
   {/if}
 </div>

@@ -4,11 +4,13 @@ import type {
   AssetDefinition,
   AssetOwnership,
   Transaction,
-  AssetValuationPolicy
+  AssetValuationPolicy,
+  Loan
 } from '../domain/economy';
 import { GAME_CONSTANTS } from '../rules/constants';
 import { getAssetById } from '../data/assets';
 import { formatRupiah } from '../../utils/currency';
+import { cloneGameState } from './clone-state';
 
 /**
  * Calculates the resale value of an asset using strict integer arithmetic.
@@ -45,23 +47,47 @@ export function calculatePlayerAssetValuation(
 }
 
 /**
- * Calculates the total net worth of a player: cash balance + asset valuation.
+ * Calculates total outstanding debt from active loans.
+ */
+export function calculatePlayerTotalDebt(playerId: string, loans: Loan[] = []): number {
+  if (!loans || loans.length === 0) return 0;
+  return loans
+    .filter((l) => l.playerId === playerId && l.status === 'ACTIVE')
+    .reduce((sum, l) => sum + l.principal, 0);
+}
+
+/**
+ * Calculates the total net worth of a player:
+ * Cash Balance + Asset Valuation - Outstanding Loan Debt - Unpaid Obligations.
  */
 export function calculatePlayerNetWorth(
   player: Player,
   ownerships: AssetOwnership[],
-  policy: AssetValuationPolicy = GAME_CONSTANTS.ASSET_VALUATION_POLICY
+  loansOrPolicy?: Loan[] | AssetValuationPolicy,
+  policyArg?: AssetValuationPolicy
 ): number {
+  let loans: Loan[] = [];
+  let policy: AssetValuationPolicy = GAME_CONSTANTS.ASSET_VALUATION_POLICY;
+
+  if (Array.isArray(loansOrPolicy)) {
+    loans = loansOrPolicy;
+    if (policyArg) policy = policyArg;
+  } else if (typeof loansOrPolicy === 'string') {
+    policy = loansOrPolicy;
+  }
+
   const valuation = calculatePlayerAssetValuation(player.id, ownerships, policy);
-  return player.balance + valuation;
+  const totalDebt = calculatePlayerTotalDebt(player.id, loans);
+  const unpaid = player.unpaidObligations ?? 0;
+  return player.balance + valuation - totalDebt - unpaid;
 }
 
 /**
- * Recalculates net worth for all players in a game state based on authoritative ownerships.
+ * Recalculates net worth for all players in a game state based on authoritative ownerships and loans.
  */
 export function syncAllPlayerNetWorth(state: GameState): void {
   for (const player of state.players) {
-    player.netWorth = calculatePlayerNetWorth(player, state.ownerships);
+    player.netWorth = calculatePlayerNetWorth(player, state.ownerships, state.loans ?? []);
   }
 }
 
@@ -172,28 +198,7 @@ export function purchaseAsset(
   const asset = check.asset;
   const cost = check.cost;
 
-  // Deep clone state
-  const nextState: GameState = {
-    ...currentState,
-    players: currentState.players.map((p) => ({ ...p })),
-    board: currentState.board.map((b) => ({ ...b })),
-    ownerships: currentState.ownerships.map((o) => ({ ...o })),
-    transactions: currentState.transactions.map((t) => ({ ...t })),
-    statusLog: currentState.statusLog.map((l) => ({ ...l })),
-    currentTurn: currentState.currentTurn
-      ? {
-          ...currentState.currentTurn,
-          movement: {
-            ...currentState.currentTurn.movement,
-            traversedIndices: [...currentState.currentTurn.movement.traversedIndices]
-          },
-          resolution: currentState.currentTurn.resolution
-            ? { ...currentState.currentTurn.resolution }
-            : undefined
-        }
-      : null
-  };
-
+  const nextState = cloneGameState(currentState);
   const activePlayer = nextState.players[nextState.activePlayerIndex];
   const prevBalance = activePlayer.balance;
 
@@ -253,22 +258,13 @@ export function purchaseAsset(
  * Declines an optional asset purchase opportunity, clearing pending purchase offer.
  */
 export function declinePurchase(currentState: GameState): GameState {
-  const nextState: GameState = {
-    ...currentState,
-    players: currentState.players.map((p) => ({ ...p })),
-    board: currentState.board.map((b) => ({ ...b })),
-    ownerships: currentState.ownerships.map((o) => ({ ...o })),
-    transactions: currentState.transactions.map((t) => ({ ...t })),
-    statusLog: currentState.statusLog.map((l) => ({ ...l })),
-    currentTurn: currentState.currentTurn
-      ? {
-          ...currentState.currentTurn,
-          pendingPurchase: null
-        }
-      : null
-  };
-
+  const nextState = cloneGameState(currentState);
   const activePlayer = nextState.players[nextState.activePlayerIndex];
+
+  if (nextState.currentTurn) {
+    nextState.currentTurn.pendingPurchase = null;
+  }
+
   nextState.statusLog.unshift({
     id: `log-decline-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     timestamp: Date.now(),
@@ -372,28 +368,7 @@ export function sellAsset(
   const resaleValue = check.resaleValue;
   const targetPlayerId = check.ownership.ownerPlayerId;
 
-  // Deep clone state
-  const nextState: GameState = {
-    ...currentState,
-    players: currentState.players.map((p) => ({ ...p })),
-    board: currentState.board.map((b) => ({ ...b })),
-    ownerships: currentState.ownerships.map((o) => ({ ...o })),
-    transactions: currentState.transactions.map((t) => ({ ...t })),
-    statusLog: currentState.statusLog.map((l) => ({ ...l })),
-    currentTurn: currentState.currentTurn
-      ? {
-          ...currentState.currentTurn,
-          movement: {
-            ...currentState.currentTurn.movement,
-            traversedIndices: [...currentState.currentTurn.movement.traversedIndices]
-          },
-          resolution: currentState.currentTurn.resolution
-            ? { ...currentState.currentTurn.resolution }
-            : undefined
-        }
-      : null
-  };
-
+  const nextState = cloneGameState(currentState);
   const seller = nextState.players.find((p) => p.id === targetPlayerId);
   if (!seller) {
     throw new Error('Data penjual tidak ditemukan.');
@@ -472,8 +447,8 @@ export function executeRentPayment(
   owner.balance += actualPaid;
 
   // Sync net worth
-  visitor.netWorth = calculatePlayerNetWorth(visitor, state.ownerships);
-  owner.netWorth = calculatePlayerNetWorth(owner, state.ownerships);
+  visitor.netWorth = calculatePlayerNetWorth(visitor, state.ownerships, state.loans ?? []);
+  owner.netWorth = calculatePlayerNetWorth(owner, state.ownerships, state.loans ?? []);
 
   const visitorTransaction: Transaction = {
     id: `tx-rent-exp-${Date.now()}-${Math.floor(Math.random() * 1000)}`,

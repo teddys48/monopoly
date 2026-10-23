@@ -20,6 +20,13 @@ import {
   sellAsset,
   canPurchaseAsset
 } from '../game/engine/economy';
+import {
+  applyLoan,
+  repayLoan,
+  resolveUnpaidObligations
+} from '../game/engine/loans';
+import { processMonthlySettlement } from '../game/engine/monthly-settlement';
+import { triggerEconomicEvent } from '../game/engine/economic-events';
 
 export type AppView = 'MENU' | 'SETUP' | 'BOARD';
 
@@ -52,6 +59,7 @@ class GameSessionStore {
   portfolioPlayerId = $state<string | null>(null);
   isTransactionsOpen = $state<boolean>(false);
   isPurchasePromptOpen = $state<boolean>(false);
+  isEconomicDashboardOpen = $state<boolean>(false);
 
   private rng: Rng = createDefaultRng();
   private animationRunId = 0;
@@ -125,6 +133,14 @@ class GameSessionStore {
     this.isPurchasePromptOpen = false;
   }
 
+  openEconomicDashboard(): void {
+    this.isEconomicDashboardOpen = true;
+  }
+
+  closeEconomicDashboard(): void {
+    this.isEconomicDashboardOpen = false;
+  }
+
   dispatch(action: GameAction): void {
     switch (action.type) {
       case 'START_GAME': {
@@ -136,6 +152,7 @@ class GameSessionStore {
         this.isPortfolioOpen = false;
         this.isTransactionsOpen = false;
         this.isPurchasePromptOpen = false;
+        this.isEconomicDashboardOpen = false;
 
         this.gameState = createGameState(action.payload, this.board);
         this.selectedTileIndex = 0;
@@ -197,6 +214,73 @@ class GameSessionStore {
         break;
       }
 
+      case 'APPLY_LOAN': {
+        if (!this.gameState) break;
+        try {
+          const targetPlayerId = action.payload.playerId ?? this.activePlayer?.id;
+          if (!targetPlayerId) break;
+          const { state: nextState } = applyLoan(
+            this.gameState,
+            targetPlayerId,
+            action.payload.amount,
+            action.payload.termMonths
+          );
+          this.gameState = nextState;
+        } catch (err) {
+          console.error('Apply loan failed:', err);
+        }
+        break;
+      }
+
+      case 'REPAY_LOAN': {
+        if (!this.gameState) break;
+        try {
+          const { state: nextState } = repayLoan(
+            this.gameState,
+            action.payload.loanId,
+            action.payload.amount,
+            action.payload.playerId
+          );
+          this.gameState = nextState;
+        } catch (err) {
+          console.error('Repay loan failed:', err);
+        }
+        break;
+      }
+
+      case 'RESOLVE_OBLIGATIONS': {
+        if (!this.gameState) break;
+        try {
+          const targetPlayerId = action.payload.playerId ?? this.activePlayer?.id;
+          if (!targetPlayerId) break;
+          const { state: nextState } = resolveUnpaidObligations(
+            this.gameState,
+            targetPlayerId,
+            action.payload.amount
+          );
+          this.gameState = nextState;
+        } catch (err) {
+          console.error('Resolve obligations failed:', err);
+        }
+        break;
+      }
+
+      case 'TRIGGER_SETTLEMENT': {
+        if (!this.gameState) break;
+        this.gameState = processMonthlySettlement(this.gameState);
+        break;
+      }
+
+      case 'TRIGGER_ECONOMIC_EVENT': {
+        if (!this.gameState) break;
+        this.gameState = triggerEconomicEvent(
+          this.gameState,
+          action.payload.eventId,
+          action.payload.targetPlayerId
+        );
+        break;
+      }
+
       case 'END_TURN':
       case 'NEXT_TURN': {
         this.handleEndTurn();
@@ -212,6 +296,7 @@ class GameSessionStore {
         this.isPortfolioOpen = false;
         this.isTransactionsOpen = false;
         this.isPurchasePromptOpen = false;
+        this.isEconomicDashboardOpen = false;
         this.gameState = null;
         this.currentView = 'MENU';
         this.selectedTileIndex = 0;
@@ -220,7 +305,8 @@ class GameSessionStore {
     }
   }
 
-  private async handleRollDice(forcedDice?: [number, number]): Promise<void> {    if (!this.gameState || !canRollDice(this.gameState)) {
+  private async handleRollDice(forcedDice?: [number, number]): Promise<void> {
+    if (!this.gameState || !canRollDice(this.gameState)) {
       return;
     }
 
@@ -231,7 +317,8 @@ class GameSessionStore {
 
     try {
       // 1. Authoritative Engine Dice Roll
-      const { state: rolledState, movement } = rollDice(this.gameState, {        rng: this.rng,
+      const { state: rolledState, movement } = rollDice(this.gameState, {
+        rng: this.rng,
         dice: forcedDice
       });
 

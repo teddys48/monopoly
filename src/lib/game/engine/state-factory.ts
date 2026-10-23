@@ -4,6 +4,7 @@ import type { Player } from '../domain/player';
 import type { BoardTile } from '../domain/board';
 import { validateGameConfig, validateBoardIntegrity } from '../rules/validation';
 import { getInitialBoardTiles } from '../data/board';
+import { ECONOMIC_CONSTANTS } from '../rules/constants';
 
 /**
  * Creates the initial game state from a validated game configuration.
@@ -31,7 +32,15 @@ export function createGameState(config: GameConfig, customBoard?: BoardTile[]): 
     balance: config.startingBalance,
     position: 0, // All start at tile 0 (Gajian Pokok)
     netWorth: config.startingBalance,
-    isActive: true
+    isActive: true,
+    employment: {
+      type: 'KARYAWAN',
+      status: 'EMPLOYED',
+      monthlySalary: ECONOMIC_CONSTANTS.DEFAULT_MONTHLY_SALARY,
+      baseSalary: ECONOMIC_CONSTANTS.DEFAULT_MONTHLY_SALARY,
+      jobTitle: idx === 0 ? 'Karyawan Swasta' : 'Spesialis Operasional'
+    },
+    unpaidObligations: 0
   }));
 
   const initialState: GameState = {
@@ -41,6 +50,19 @@ export function createGameState(config: GameConfig, customBoard?: BoardTile[]): 
     players,
     activePlayerIndex: 0,
     currentRound: 1,
+    currentMonth: 1,
+    lastSettledMonth: 0,
+    indicators: {
+      currentMonth: 1,
+      inflationIndex: ECONOMIC_CONSTANTS.BASE_INFLATION_INDEX,
+      currentInflationRate: ECONOMIC_CONSTANTS.DEFAULT_MONTHLY_INFLATION_RATE,
+      condition: 'STABLE'
+    },
+    loans: [],
+    activeEvents: [],
+    settlements: [],
+    livingExpenses: { ...ECONOMIC_CONSTANTS.DEFAULT_LIVING_EXPENSES },
+    lastSettlementSummary: null,
     phase: 'WAITING_ROLL',
     board: boardToUse.map((t) => ({ ...t })),
     ownerships: [],
